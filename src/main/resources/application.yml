@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/requestbot
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+telegram:
+  bot:
+    username: your_bot_username
+    token: your_bot_token
+    manager-chat-id: 123456789
+
+logging:
+  level:
+    root: INFO
+    com.example.request_bot: DEBUG
