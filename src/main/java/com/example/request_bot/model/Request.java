@@ -44,6 +44,9 @@ public class Request {
     @Column(nullable = false)
     private RequestStatus status;
 
+    @Column(name = "manager_comment", columnDefinition = "TEXT")
+    private String managerComment;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -97,5 +100,13 @@ public class Request {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getManagerComment() {
+        return managerComment;
+    }
+
+    public void setManagerComment(String managerComment) {
+        this.managerComment = managerComment;
     }
 }

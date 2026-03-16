@@ -18,6 +18,9 @@ public class User {
     @Column(name = "telegram_id", nullable = false, unique = true)
     private Long telegramId;
 
+    @Column(name = "chat_id", nullable = false)
+    private Long chatId;
+
     @Column(nullable = false)
     private String name;
 
@@ -37,6 +40,14 @@ public class User {
 
     public void setTelegramId(Long telegramId) {
         this.telegramId = telegramId;
+    }
+
+    public Long getChatId() {
+        return chatId;
+    }
+
+    public void setChatId(Long chatId) {
+        this.chatId = chatId;
     }
 
     public String getName() {

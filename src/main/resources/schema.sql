@@ -1,6 +1,7 @@
 create table if not exists users (
     id bigserial primary key,
     telegram_id bigint not null unique,
+    chat_id bigint not null,
     name varchar(255) not null,
     department varchar(255) not null,
     position varchar(255) not null
@@ -13,5 +14,6 @@ create table if not exists requests (
     description text not null,
     priority varchar(50) not null,
     status varchar(50) not null,
+    manager_comment text,
     created_at timestamp not null
 );

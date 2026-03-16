@@ -53,4 +53,13 @@ public class RequestService {
         request.setStatus(RequestStatus.REJECTED);
         requestRepository.save(request);
     }
+
+    public Request save(Request request) {
+        return requestRepository.save(request);
+    }
+
+    public void addManagerComment(Request request, String comment) {
+        request.setManagerComment(comment);
+        requestRepository.save(request);
+    }
 }
