@@ -98,35 +98,12 @@ Telegram-бот для подачи и согласования заявок с�
 | `telegram` | Интеграция с Telegram Bot API |
 
 Ключевые классы проекта:
-
-- [RequestBotApplication.java](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\java\com\example\request_bot\RequestBotApplication.java)
-- [ConversationService.java](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\java\com\example\request_bot\service\ConversationService.java)
-- [RequestTelegramBot.java](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\java\com\example\request_bot\telegram\RequestTelegramBot.java)
-- [RequestService.java](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\java\com\example\request_bot\service\RequestService.java)
-- [UserService.java](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\java\com\example\request_bot\service\UserService.java)
-- [NotificationService.java](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\java\com\example\request_bot\service\NotificationService.java)
-
-## Структура проекта
-
-```text
-src
-├─ main
-│  ├─ java/com/example/request_bot
-│  │  ├─ config
-│  │  ├─ controller
-│  │  ├─ dto
-│  │  ├─ model
-│  │  ├─ repository
-│  │  ├─ service
-│  │  ├─ session
-│  │  └─ telegram
-│  └─ resources
-│     ├─ application.yml
-│     └─ schema.sql
-└─ test
-   ├─ java/com/example/request_bot
-   └─ resources
-```
+- RequestBotApplication.java
+- ConversationService.java
+- RequestTelegramBot.java
+- RequestService.java
+- UserService.java
+- NotificationService.java
 
 ## Быстрый старт
 
@@ -157,7 +134,7 @@ CREATE DATABASE requestbot_db;
 
 ### 4. Настройка приложения
 
-Откройте [application.yml](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\resources\application.yml) и заполните настройки базы данных и Telegram.
+Откройте application.yml и заполните настройки базы данных и Telegram.
 
 ### 5. Запуск
 
@@ -165,7 +142,7 @@ CREATE DATABASE requestbot_db;
 
 - открыть проект
 - дождаться загрузки Maven-зависимостей
-- запустить [RequestBotApplication.java](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\main\java\com\example\request_bot\RequestBotApplication.java)
+- запустить RequestBotApplication.java
 
 Через терминал:
 
@@ -213,7 +190,7 @@ telegram:
 ```
 
 Тестовый конфиг:
-- [application-test.yml](C:\JB\JB projects\IntelliJ IDEA Ultimate Projects\request_bot\src\test\resources\application-test.yml)
+- application-test.yml
 
 ## Текущее состояние проекта
 
