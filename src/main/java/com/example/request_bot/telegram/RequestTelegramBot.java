@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -67,6 +68,21 @@ public class RequestTelegramBot implements SpringLongPollingBot, LongPollingSing
         } catch (TelegramApiException exception) {
             log.error("Failed to send Telegram message to chat {}", chatId, exception);
             throw new RuntimeException("Failed to send telegram message", exception);
+        }
+    }
+
+    public void editText(Long chatId, Integer messageId, String text, InlineKeyboardMarkup keyboardMarkup) {
+        EditMessageText message = EditMessageText.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .text(text)
+                .replyMarkup(keyboardMarkup)
+                .build();
+        try {
+            telegramClient.execute(message);
+        } catch (TelegramApiException exception) {
+            log.error("Failed to edit Telegram message {} in chat {}", messageId, chatId, exception);
+            throw new RuntimeException("Failed to edit telegram message", exception);
         }
     }
 

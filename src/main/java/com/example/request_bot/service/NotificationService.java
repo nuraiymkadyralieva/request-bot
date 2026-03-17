@@ -25,6 +25,10 @@ public class NotificationService {
         bot.sendText(chatId, text, keyboardMarkup);
     }
 
+    public void editText(Long chatId, Integer messageId, String text, InlineKeyboardMarkup keyboardMarkup) {
+        bot.editText(chatId, messageId, text, keyboardMarkup);
+    }
+
     public void notifyManager(String text) {
         if (botProperties.managerChatId() != null) {
             bot.sendText(botProperties.managerChatId(), text);

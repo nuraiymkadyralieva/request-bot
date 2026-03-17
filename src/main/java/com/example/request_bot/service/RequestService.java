@@ -3,11 +3,13 @@ package com.example.request_bot.service;
 import com.example.request_bot.dto.RequestDraft;
 import com.example.request_bot.model.Request;
 import com.example.request_bot.model.User;
+import com.example.request_bot.model.enums.RequestPriority;
 import com.example.request_bot.model.enums.RequestStatus;
 import com.example.request_bot.repository.RequestRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -32,6 +34,24 @@ public class RequestService {
 
     public List<Request> getUserRequests(User user) {
         return requestRepository.findAllByUserOrderByCreatedAtDesc(user);
+    }
+
+    public List<Request> getPendingRequests() {
+        return requestRepository.findAllByStatusOrderByCreatedAtDesc(RequestStatus.IN_REVIEW);
+    }
+
+    public List<Request> getPendingRequestsByPriority(RequestPriority priority) {
+        return requestRepository.findAllByStatusAndPriorityOrderByCreatedAtDesc(RequestStatus.IN_REVIEW, priority);
+    }
+
+    public List<Request> getReviewedRequests() {
+        return requestRepository.findAllByStatusInOrderByCreatedAtDesc(
+                Arrays.asList(RequestStatus.APPROVED, RequestStatus.REJECTED)
+        );
+    }
+
+    public List<Request> getReviewedRequestsByStatus(RequestStatus status) {
+        return requestRepository.findAllByStatusOrderByCreatedAtDesc(status);
     }
 
     public Request getById(Long id) {
