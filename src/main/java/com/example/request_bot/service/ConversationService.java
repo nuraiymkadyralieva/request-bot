@@ -4,7 +4,6 @@ import com.example.request_bot.dto.RequestDraft;
 import com.example.request_bot.model.Request;
 import com.example.request_bot.model.User;
 import com.example.request_bot.model.enums.RequestPriority;
-import com.example.request_bot.model.enums.RequestStatus;
 import com.example.request_bot.model.enums.RequestType;
 import com.example.request_bot.session.SessionStorage;
 import com.example.request_bot.session.UserSession;
@@ -20,9 +19,6 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 
-import java.util.ArrayList;
-import java.util.List;
-
 @Service
 @Transactional
 public class ConversationService {
@@ -30,28 +26,26 @@ public class ConversationService {
     private static final String TYPE_PREFIX = "type:";
     private static final String PRIORITY_PREFIX = "priority:";
     private static final String CONFIRM_PREFIX = "confirm:";
-    private static final String APPROVE_PREFIX = "approve:";
-    private static final String REJECT_PREFIX = "reject:";
-    private static final String COMMENT_PREFIX = "comment:";
-    private static final String MANAGER_MENU = "manager:menu";
-    private static final String MANAGER_PENDING = "manager:pending";
-    private static final String MANAGER_REVIEWED = "manager:reviewed";
-    private static final String MANAGER_PENDING_FILTER = "manager:pending:";
-    private static final String MANAGER_REVIEWED_FILTER = "manager:reviewed:";
-    private static final String MANAGER_OPEN_PENDING = "manager:open:pending:";
-    private static final String MANAGER_OPEN_REVIEWED = "manager:open:reviewed:";
 
     private final SessionStorage sessionStorage;
     private final UserService userService;
     private final RequestService requestService;
     private final NotificationService notificationService;
+    private final ManagerPanelService managerPanelService;
+    private final RequestTextFormatter requestTextFormatter;
 
-    public ConversationService(SessionStorage sessionStorage, UserService userService,
-                               RequestService requestService, NotificationService notificationService) {
+    public ConversationService(SessionStorage sessionStorage,
+                               UserService userService,
+                               RequestService requestService,
+                               NotificationService notificationService,
+                               ManagerPanelService managerPanelService,
+                               RequestTextFormatter requestTextFormatter) {
         this.sessionStorage = sessionStorage;
         this.userService = userService;
         this.requestService = requestService;
         this.notificationService = notificationService;
+        this.managerPanelService = managerPanelService;
+        this.requestTextFormatter = requestTextFormatter;
     }
 
     public void onTextMessage(Message message) {
@@ -87,8 +81,8 @@ public class ConversationService {
             handleMyRequests(chatId, telegramId);
             return;
         }
-        if ("/manager_panel".equals(text) || "/manager_requests".equals(text)) {
-            showManagerPanel(chatId, telegramId, null);
+        if ("/manager_panel".equals(text)) {
+            managerPanelService.showManagerPanel(chatId, telegramId, null);
             return;
         }
 
@@ -97,7 +91,7 @@ public class ConversationService {
             case WAITING_FOR_DEPARTMENT -> handleDepartment(chatId, session, text);
             case WAITING_FOR_POSITION -> handlePosition(chatId, telegramId, session, text);
             case WAITING_FOR_REQUEST_DESCRIPTION -> handleDescription(chatId, session, text);
-            case WAITING_FOR_MANAGER_COMMENT -> handleManagerComment(chatId, telegramId, session, text);
+            case WAITING_FOR_MANAGER_COMMENT -> managerPanelService.handleManagerComment(chatId, telegramId, session, text);
             case WAITING_FOR_REQUEST_TYPE, WAITING_FOR_REQUEST_PRIORITY, WAITING_FOR_REQUEST_CONFIRM ->
                     notificationService.sendText(chatId, "Пожалуйста, используйте кнопки ниже.");
             default -> notificationService.sendText(chatId, "Неизвестная команда. Используйте /help");
@@ -132,44 +126,8 @@ public class ConversationService {
             handleConfirmation(chatId, telegramId, session, data.substring(CONFIRM_PREFIX.length()));
             return;
         }
-        if (data.startsWith(APPROVE_PREFIX)) {
-            handleManagerDecision(chatId, telegramId, data.substring(APPROVE_PREFIX.length()), true);
-            return;
-        }
-        if (data.startsWith(REJECT_PREFIX)) {
-            handleManagerDecision(chatId, telegramId, data.substring(REJECT_PREFIX.length()), false);
-            return;
-        }
-        if (data.startsWith(COMMENT_PREFIX)) {
-            handleManagerCommentStart(chatId, telegramId, session, data.substring(COMMENT_PREFIX.length()));
-            return;
-        }
-        if (MANAGER_MENU.equals(data)) {
-            showManagerPanel(chatId, telegramId, messageId);
-            return;
-        }
-        if (MANAGER_PENDING.equals(data)) {
-            showPendingMenu(chatId, telegramId, messageId);
-            return;
-        }
-        if (MANAGER_REVIEWED.equals(data)) {
-            showReviewedMenu(chatId, telegramId, messageId);
-            return;
-        }
-        if (data.startsWith(MANAGER_PENDING_FILTER)) {
-            showPendingList(chatId, telegramId, data.substring(MANAGER_PENDING_FILTER.length()), messageId);
-            return;
-        }
-        if (data.startsWith(MANAGER_REVIEWED_FILTER)) {
-            showReviewedList(chatId, telegramId, data.substring(MANAGER_REVIEWED_FILTER.length()), messageId);
-            return;
-        }
-        if (data.startsWith(MANAGER_OPEN_PENDING)) {
-            openManagerCard(chatId, telegramId, data.substring(MANAGER_OPEN_PENDING.length()), true, messageId);
-            return;
-        }
-        if (data.startsWith(MANAGER_OPEN_REVIEWED)) {
-            openManagerCard(chatId, telegramId, data.substring(MANAGER_OPEN_REVIEWED.length()), false, messageId);
+        if (managerPanelService.handlesCallback(data)) {
+            managerPanelService.handleCallback(chatId, telegramId, messageId, data, session);
             return;
         }
 
@@ -242,141 +200,12 @@ public class ConversationService {
             return;
         }
         User user = userService.getByTelegramId(telegramId);
-        List<Request> requests = requestService.getUserRequests(user);
+        java.util.List<Request> requests = requestService.getUserRequests(user);
         if (requests.isEmpty()) {
             notificationService.sendText(chatId, "У вас пока нет заявок.");
             return;
         }
-        StringBuilder builder = new StringBuilder("Ваши заявки:\n\n");
-        for (Request request : requests) {
-            builder.append("#").append(request.getId())
-                    .append(" | ").append(formatRequestType(request.getType()))
-                    .append(" | ").append(formatRequestStatus(request.getStatus()));
-            if (StringUtils.hasText(request.getManagerComment())) {
-                builder.append(" | Комментарий: ").append(request.getManagerComment());
-            }
-            builder.append('\n');
-        }
-        notificationService.sendText(chatId, builder.toString().trim());
-    }
-
-    private void showManagerPanel(Long chatId, Long telegramId, Integer messageId) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
-            return;
-        }
-        renderManagerView(chatId, messageId, """
-Панель руководителя
-
-Выберите раздел:
-""".trim(), buildManagerPanelKeyboard());
-    }
-
-    private void showPendingMenu(Long chatId, Long telegramId, Integer messageId) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
-            return;
-        }
-        renderManagerView(chatId, messageId, """
-Нерассмотренные заявки
-
-Выберите срочность:
-""".trim(), buildPendingFilterKeyboard());
-    }
-
-    private void showReviewedMenu(Long chatId, Long telegramId, Integer messageId) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
-            return;
-        }
-        renderManagerView(chatId, messageId, """
-Рассмотренные заявки
-
-Выберите тип:
-""".trim(), buildReviewedFilterKeyboard());
-    }
-
-    private void showPendingList(Long chatId, Long telegramId, String filter, Integer messageId) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
-            return;
-        }
-        String filterKey = filter.toUpperCase();
-        List<Request> requests = "ALL".equals(filterKey)
-                ? requestService.getPendingRequests()
-                : requestService.getPendingRequestsByPriority(parsePriority(filterKey, chatId));
-        if (requests == null) {
-            return;
-        }
-
-        String label = "ALL".equals(filterKey) ? "Все" : formatRequestPriority(RequestPriority.valueOf(filterKey));
-        if (requests.isEmpty()) {
-            renderManagerView(chatId, messageId,
-                    "Нерассмотренные заявки: " + label + "\n\nПодходящих заявок пока нет.",
-                    buildPendingFilterKeyboard());
-            return;
-        }
-
-        StringBuilder builder = new StringBuilder("Нерассмотренные заявки: ").append(label).append("\n\n");
-        for (Request request : requests) {
-            builder.append("#").append(request.getId())
-                    .append(" | ").append(formatRequestType(request.getType()))
-                    .append(" | ").append(formatRequestPriority(request.getPriority()))
-                    .append(" | ").append(request.getUser().getName())
-                    .append('\n');
-        }
-        renderManagerView(chatId, messageId, builder.toString().trim(), buildPendingRequestsKeyboard(requests, filterKey));
-    }
-
-    private void showReviewedList(Long chatId, Long telegramId, String filter, Integer messageId) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
-            return;
-        }
-        String filterKey = filter.toUpperCase();
-        List<Request> requests = "ALL".equals(filterKey)
-                ? requestService.getReviewedRequests()
-                : requestService.getReviewedRequestsByStatus(parseReviewedStatus(filterKey, chatId));
-        if (requests == null) {
-            return;
-        }
-
-        String label = formatReviewedFilter(filterKey);
-        if (requests.isEmpty()) {
-            renderManagerView(chatId, messageId,
-                    "Рассмотренные заявки: " + label + "\n\nПодходящих заявок пока нет.",
-                    buildReviewedFilterKeyboard());
-            return;
-        }
-
-        StringBuilder builder = new StringBuilder("Рассмотренные заявки: ").append(label).append("\n\n");
-        for (Request request : requests) {
-            builder.append("#").append(request.getId())
-                    .append(" | ").append(formatRequestType(request.getType()))
-                    .append(" | ").append(formatRequestStatus(request.getStatus()))
-                    .append(" | ").append(request.getUser().getName())
-                    .append('\n');
-        }
-        renderManagerView(chatId, messageId, builder.toString().trim(), buildReviewedRequestsKeyboard(requests, filterKey));
-    }
-
-    private void openManagerCard(Long chatId, Long telegramId, String payload, boolean pending, Integer messageId) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
-            return;
-        }
-        String[] parts = payload.split(":");
-        if (parts.length != 2) {
-            notificationService.sendText(chatId, "Не удалось открыть заявку.");
-            return;
-        }
-        Request request = getRequest(parts[1], chatId);
-        if (request == null) {
-            return;
-        }
-        renderManagerView(chatId, messageId,
-                buildManagerNotification(request.getUser(), request),
-                buildManagerRequestCardKeyboard(request, pending, parts[0]));
+        notificationService.sendText(chatId, requestTextFormatter.buildUserRequestsList(requests));
     }
 
     private void handleTypeSelection(Long chatId, UserSession session, String rawType) {
@@ -401,7 +230,7 @@ public class ConversationService {
         try {
             session.getRequestDraft().setPriority(RequestPriority.valueOf(rawPriority));
             session.setState(UserState.WAITING_FOR_REQUEST_CONFIRM);
-            notificationService.sendText(chatId, buildDraftSummary(session.getRequestDraft()), buildConfirmKeyboard());
+            notificationService.sendText(chatId, requestTextFormatter.buildDraftSummary(session.getRequestDraft()), buildConfirmKeyboard());
         } catch (IllegalArgumentException exception) {
             notificationService.sendText(chatId, "Неизвестная срочность.");
         }
@@ -431,123 +260,6 @@ public class ConversationService {
         notificationService.sendText(chatId, "Неизвестное действие подтверждения.");
     }
 
-    private void handleManagerDecision(Long chatId, Long telegramId, String rawRequestId, boolean approved) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Только руководитель может использовать эти действия.");
-            return;
-        }
-        Request request = getRequest(rawRequestId, chatId);
-        if (request == null) {
-            return;
-        }
-        if (request.getStatus() == RequestStatus.APPROVED || request.getStatus() == RequestStatus.REJECTED) {
-            notificationService.sendText(chatId, "Эта заявка уже обработана.");
-            return;
-        }
-        if (approved) {
-            requestService.approve(request);
-            notificationService.sendText(chatId, "Заявка #" + request.getId() + " одобрена.");
-            notificationService.sendText(request.getUser().getChatId(), "Ваша заявка #" + request.getId() + " одобрена.");
-        } else {
-            requestService.reject(request);
-            notificationService.sendText(chatId, "Заявка #" + request.getId() + " отклонена.");
-            notificationService.sendText(request.getUser().getChatId(), "Ваша заявка #" + request.getId() + " отклонена.");
-        }
-    }
-
-    private void handleManagerCommentStart(Long chatId, Long telegramId, UserSession session, String rawRequestId) {
-        if (!isManager(chatId, telegramId)) {
-            notificationService.sendText(chatId, "Только руководитель может использовать эти действия.");
-            return;
-        }
-        Request request = getRequest(rawRequestId, chatId);
-        if (request == null) {
-            return;
-        }
-        session.setRequestIdForComment(request.getId());
-        session.setState(UserState.WAITING_FOR_MANAGER_COMMENT);
-        notificationService.sendText(chatId, "Введите комментарий для заявки #" + request.getId() + ":");
-    }
-
-    private void handleManagerComment(Long chatId, Long telegramId, UserSession session, String comment) {
-        if (!isManager(chatId, telegramId)) {
-            session.setState(UserState.IDLE);
-            session.setRequestIdForComment(null);
-            notificationService.sendText(chatId, "Только руководитель может добавить комментарий.");
-            return;
-        }
-        if (!StringUtils.hasText(comment)) {
-            notificationService.sendText(chatId, "Комментарий не должен быть пустым. Введите комментарий:");
-            return;
-        }
-        Long requestId = session.getRequestIdForComment();
-        if (requestId == null) {
-            session.setState(UserState.IDLE);
-            notificationService.sendText(chatId, "Не удалось определить заявку для комментария.");
-            return;
-        }
-        Request request = requestService.getById(requestId);
-        requestService.addManagerComment(request, comment);
-        session.setState(UserState.IDLE);
-        session.setRequestIdForComment(null);
-        notificationService.sendText(chatId, "Комментарий отправлен для заявки #" + request.getId());
-        notificationService.sendText(request.getUser().getChatId(), """
-Комментарий руководителя к заявке #%d:
-
-%s
-""".formatted(request.getId(), comment).trim());
-    }
-
-    private Request getRequest(String rawRequestId, Long chatId) {
-        try {
-            return requestService.getById(Long.valueOf(rawRequestId));
-        } catch (Exception exception) {
-            notificationService.sendText(chatId, "Заявка не найдена.");
-            return null;
-        }
-    }
-
-    private RequestPriority parsePriority(String rawPriority, Long chatId) {
-        try {
-            return RequestPriority.valueOf(rawPriority);
-        } catch (Exception exception) {
-            notificationService.sendText(chatId, "Не удалось определить срочность.");
-            return null;
-        }
-    }
-
-    private RequestStatus parseReviewedStatus(String rawStatus, Long chatId) {
-        try {
-            return RequestStatus.valueOf(rawStatus);
-        } catch (Exception exception) {
-            notificationService.sendText(chatId, "Не удалось определить тип списка.");
-            return null;
-        }
-    }
-
-    private boolean isManager(Long chatId, Long telegramId) {
-        Long managerChatId = notificationService.getManagerChatId();
-        return managerChatId != null && (managerChatId.equals(chatId) || managerChatId.equals(telegramId));
-    }
-
-    private void renderManagerView(Long chatId, Integer messageId, String text, InlineKeyboardMarkup keyboard) {
-        if (messageId == null) {
-            notificationService.sendText(chatId, text, keyboard);
-        } else {
-            notificationService.editText(chatId, messageId, text, keyboard);
-        }
-    }
-
-    private String buildDraftSummary(RequestDraft draft) {
-        return """
-Проверьте заявку:
-
-Тип: %s
-Описание: %s
-Срочность: %s
-""".formatted(formatRequestType(draft.getType()), draft.getDescription(), formatRequestPriority(draft.getPriority())).trim();
-    }
-
     private InlineKeyboardMarkup buildTypeKeyboard() {
         return InlineKeyboardMarkup.builder()
                 .keyboardRow(new InlineKeyboardRow(button("Финансы", TYPE_PREFIX + RequestType.FINANCE.name()),
@@ -574,75 +286,10 @@ public class ConversationService {
 
     private InlineKeyboardMarkup buildManagerKeyboard(Long requestId) {
         return InlineKeyboardMarkup.builder()
-                .keyboardRow(new InlineKeyboardRow(button("Одобрить", APPROVE_PREFIX + requestId),
-                        button("Отклонить", REJECT_PREFIX + requestId),
-                        button("Комментарий", COMMENT_PREFIX + requestId)))
+                .keyboardRow(new InlineKeyboardRow(button("Одобрить", ManagerPanelService.APPROVE_PREFIX + requestId),
+                        button("Отклонить", ManagerPanelService.REJECT_PREFIX + requestId),
+                        button("Комментарий", ManagerPanelService.COMMENT_PREFIX + requestId)))
                 .build();
-    }
-
-    private InlineKeyboardMarkup buildManagerPanelKeyboard() {
-        return InlineKeyboardMarkup.builder()
-                .keyboardRow(new InlineKeyboardRow(button("Нерассмотренные", MANAGER_PENDING),
-                        button("Рассмотренные", MANAGER_REVIEWED)))
-                .build();
-    }
-
-    private InlineKeyboardMarkup buildPendingFilterKeyboard() {
-        return InlineKeyboardMarkup.builder()
-                .keyboardRow(new InlineKeyboardRow(button("Все", MANAGER_PENDING_FILTER + "ALL"),
-                        button("Высокая", MANAGER_PENDING_FILTER + RequestPriority.HIGH.name())))
-                .keyboardRow(new InlineKeyboardRow(button("Средняя", MANAGER_PENDING_FILTER + RequestPriority.MEDIUM.name()),
-                        button("Низкая", MANAGER_PENDING_FILTER + RequestPriority.LOW.name())))
-                .keyboardRow(new InlineKeyboardRow(button("Назад", MANAGER_MENU)))
-                .build();
-    }
-
-    private InlineKeyboardMarkup buildReviewedFilterKeyboard() {
-        return InlineKeyboardMarkup.builder()
-                .keyboardRow(new InlineKeyboardRow(button("Все", MANAGER_REVIEWED_FILTER + "ALL"),
-                        button("Одобренные", MANAGER_REVIEWED_FILTER + RequestStatus.APPROVED.name())))
-                .keyboardRow(new InlineKeyboardRow(button("Отклоненные", MANAGER_REVIEWED_FILTER + RequestStatus.REJECTED.name())))
-                .keyboardRow(new InlineKeyboardRow(button("Назад", MANAGER_MENU)))
-                .build();
-    }
-
-    private InlineKeyboardMarkup buildPendingRequestsKeyboard(List<Request> requests, String filter) {
-        List<InlineKeyboardRow> rows = new ArrayList<>();
-        for (Request request : requests) {
-            rows.add(new InlineKeyboardRow(button("Открыть #" + request.getId(),
-                    MANAGER_OPEN_PENDING + filter + ":" + request.getId())));
-        }
-        rows.add(new InlineKeyboardRow(button("К фильтрам", MANAGER_PENDING)));
-        rows.add(new InlineKeyboardRow(button("В панель", MANAGER_MENU)));
-        return InlineKeyboardMarkup.builder().keyboard(rows).build();
-    }
-
-    private InlineKeyboardMarkup buildReviewedRequestsKeyboard(List<Request> requests, String filter) {
-        List<InlineKeyboardRow> rows = new ArrayList<>();
-        for (Request request : requests) {
-            rows.add(new InlineKeyboardRow(button("Открыть #" + request.getId(),
-                    MANAGER_OPEN_REVIEWED + filter + ":" + request.getId())));
-        }
-        rows.add(new InlineKeyboardRow(button("К фильтрам", MANAGER_REVIEWED)));
-        rows.add(new InlineKeyboardRow(button("В панель", MANAGER_MENU)));
-        return InlineKeyboardMarkup.builder().keyboard(rows).build();
-    }
-
-    private InlineKeyboardMarkup buildManagerRequestCardKeyboard(Request request, boolean pending, String filter) {
-        List<InlineKeyboardRow> rows = new ArrayList<>();
-        if (pending && request.getStatus() == RequestStatus.IN_REVIEW) {
-            rows.add(new InlineKeyboardRow(button("Одобрить", APPROVE_PREFIX + request.getId()),
-                    button("Отклонить", REJECT_PREFIX + request.getId()),
-                    button("Комментарий", COMMENT_PREFIX + request.getId())));
-        }
-        rows.add(new InlineKeyboardRow(button("Назад к списку",
-                (pending ? MANAGER_PENDING_FILTER : MANAGER_REVIEWED_FILTER) + filter)));
-        rows.add(new InlineKeyboardRow(button("В панель", MANAGER_MENU)));
-        return InlineKeyboardMarkup.builder().keyboard(rows).build();
-    }
-
-    private InlineKeyboardButton button(String text, String callbackData) {
-        return InlineKeyboardButton.builder().text(text).callbackData(callbackData).build();
     }
 
     private String buildManagerNotification(User user, Request request) {
@@ -657,42 +304,19 @@ public class ConversationService {
 Описание: %s
 ID заявки: %d
 Статус: %s
-""".formatted(user.getName(), user.getDepartment(), user.getPosition(), formatRequestType(request.getType()),
-                formatRequestPriority(request.getPriority()), request.getDescription(), request.getId(),
-                formatRequestStatus(request.getStatus())).trim();
+""".formatted(
+                user.getName(),
+                user.getDepartment(),
+                user.getPosition(),
+                requestTextFormatter.formatRequestType(request.getType()),
+                requestTextFormatter.formatRequestPriority(request.getPriority()),
+                request.getDescription(),
+                request.getId(),
+                requestTextFormatter.formatRequestStatus(request.getStatus())
+        ).trim();
     }
 
-    private String formatRequestType(RequestType type) {
-        return switch (type) {
-            case FINANCE -> "Финансы";
-            case EQUIPMENT -> "Оборудование";
-            case LEAVE -> "Отпуск";
-            case OTHER -> "Другое";
-        };
-    }
-
-    private String formatRequestPriority(RequestPriority priority) {
-        return switch (priority) {
-            case LOW -> "Низкая";
-            case MEDIUM -> "Средняя";
-            case HIGH -> "Высокая";
-        };
-    }
-
-    private String formatRequestStatus(RequestStatus status) {
-        return switch (status) {
-            case NEW -> "Новая";
-            case IN_REVIEW -> "На рассмотрении";
-            case APPROVED -> "Одобрена";
-            case REJECTED -> "Отклонена";
-        };
-    }
-
-    private String formatReviewedFilter(String filter) {
-        return switch (filter) {
-            case "APPROVED" -> "Одобренные";
-            case "REJECTED" -> "Отклоненные";
-            default -> "Все";
-        };
+    private InlineKeyboardButton button(String text, String callbackData) {
+        return InlineKeyboardButton.builder().text(text).callbackData(callbackData).build();
     }
 }
