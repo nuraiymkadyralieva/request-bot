@@ -26,6 +26,7 @@ public class ConversationService {
     private static final String TYPE_PREFIX = "type:";
     private static final String PRIORITY_PREFIX = "priority:";
     private static final String CONFIRM_PREFIX = "confirm:";
+    private static final String CONFIRM_EDIT = "EDIT";
 
     private final SessionStorage sessionStorage;
     private final UserService userService;
@@ -82,7 +83,7 @@ public class ConversationService {
             return;
         }
         if ("/manager_panel".equals(text)) {
-            managerPanelService.showManagerPanel(chatId, telegramId, null);
+            managerPanelService.showManagerPanel(chatId, telegramId, session, null);
             return;
         }
 
@@ -92,6 +93,7 @@ public class ConversationService {
             case WAITING_FOR_POSITION -> handlePosition(chatId, telegramId, session, text);
             case WAITING_FOR_REQUEST_DESCRIPTION -> handleDescription(chatId, session, text);
             case WAITING_FOR_MANAGER_COMMENT -> managerPanelService.handleManagerComment(chatId, telegramId, session, text);
+            case WAITING_FOR_MANAGER_SEARCH -> managerPanelService.handleManagerSearch(chatId, telegramId, session, text);
             case WAITING_FOR_REQUEST_TYPE, WAITING_FOR_REQUEST_PRIORITY, WAITING_FOR_REQUEST_CONFIRM ->
                     notificationService.sendText(chatId, "Пожалуйста, используйте кнопки ниже.");
             default -> notificationService.sendText(chatId, "Неизвестная команда. Используйте /help");
@@ -115,15 +117,15 @@ public class ConversationService {
         }
 
         if (data.startsWith(TYPE_PREFIX)) {
-            handleTypeSelection(chatId, session, data.substring(TYPE_PREFIX.length()));
+            handleTypeSelection(chatId, messageId, session, data.substring(TYPE_PREFIX.length()));
             return;
         }
         if (data.startsWith(PRIORITY_PREFIX)) {
-            handlePrioritySelection(chatId, session, data.substring(PRIORITY_PREFIX.length()));
+            handlePrioritySelection(chatId, messageId, session, data.substring(PRIORITY_PREFIX.length()));
             return;
         }
         if (data.startsWith(CONFIRM_PREFIX)) {
-            handleConfirmation(chatId, telegramId, session, data.substring(CONFIRM_PREFIX.length()));
+            handleConfirmation(chatId, telegramId, messageId, session, data.substring(CONFIRM_PREFIX.length()));
             return;
         }
         if (managerPanelService.handlesCallback(data)) {
@@ -180,8 +182,15 @@ public class ConversationService {
             return;
         }
         session.getRequestDraft().setDescription(text);
+        if (session.isEditingRequestDescription() && session.getRequestDraft().getPriority() != null) {
+            session.setEditingRequestDescription(false);
+            session.setState(UserState.WAITING_FOR_REQUEST_CONFIRM);
+            renderEmployeeFlow(chatId, session, requestTextFormatter.buildDraftSummary(session.getRequestDraft()), buildConfirmKeyboard());
+            return;
+        }
+        session.setEditingRequestDescription(false);
         session.setState(UserState.WAITING_FOR_REQUEST_PRIORITY);
-        notificationService.sendText(chatId, "Выберите срочность:", buildPriorityKeyboard());
+        renderEmployeeFlow(chatId, session, "Выберите срочность:", buildPriorityKeyboard());
     }
 
     private void handleNewRequest(Long chatId, Long telegramId, UserSession session) {
@@ -191,7 +200,9 @@ public class ConversationService {
         }
         session.setRequestDraft(new RequestDraft());
         session.setState(UserState.WAITING_FOR_REQUEST_TYPE);
-        notificationService.sendText(chatId, "Выберите тип заявки:", buildTypeKeyboard());
+        session.setEmployeeFlowMessageId(
+                notificationService.sendTextAndReturnMessageId(chatId, "Выберите тип заявки:", buildTypeKeyboard())
+        );
     }
 
     private void handleMyRequests(Long chatId, Long telegramId) {
@@ -208,7 +219,7 @@ public class ConversationService {
         notificationService.sendText(chatId, requestTextFormatter.buildUserRequestsList(requests));
     }
 
-    private void handleTypeSelection(Long chatId, UserSession session, String rawType) {
+    private void handleTypeSelection(Long chatId, Integer messageId, UserSession session, String rawType) {
         if (session.getState() != UserState.WAITING_FOR_REQUEST_TYPE || session.getRequestDraft() == null) {
             notificationService.sendText(chatId, "Эта кнопка уже неактуальна. Начните новую заявку через /new_request");
             return;
@@ -216,13 +227,14 @@ public class ConversationService {
         try {
             session.getRequestDraft().setType(RequestType.valueOf(rawType));
             session.setState(UserState.WAITING_FOR_REQUEST_DESCRIPTION);
-            notificationService.sendText(chatId, "Введите описание заявки:");
+            session.setEmployeeFlowMessageId(messageId);
+            renderEmployeeFlow(chatId, session, "Введите описание заявки:", null);
         } catch (IllegalArgumentException exception) {
             notificationService.sendText(chatId, "Неизвестный тип заявки.");
         }
     }
 
-    private void handlePrioritySelection(Long chatId, UserSession session, String rawPriority) {
+    private void handlePrioritySelection(Long chatId, Integer messageId, UserSession session, String rawPriority) {
         if (session.getState() != UserState.WAITING_FOR_REQUEST_PRIORITY || session.getRequestDraft() == null) {
             notificationService.sendText(chatId, "Эта кнопка уже неактуальна. Сначала заново создайте заявку через /new_request.");
             return;
@@ -230,13 +242,14 @@ public class ConversationService {
         try {
             session.getRequestDraft().setPriority(RequestPriority.valueOf(rawPriority));
             session.setState(UserState.WAITING_FOR_REQUEST_CONFIRM);
-            notificationService.sendText(chatId, requestTextFormatter.buildDraftSummary(session.getRequestDraft()), buildConfirmKeyboard());
+            session.setEmployeeFlowMessageId(messageId);
+            renderEmployeeFlow(chatId, session, requestTextFormatter.buildDraftSummary(session.getRequestDraft()), buildConfirmKeyboard());
         } catch (IllegalArgumentException exception) {
             notificationService.sendText(chatId, "Неизвестная срочность.");
         }
     }
 
-    private void handleConfirmation(Long chatId, Long telegramId, UserSession session, String action) {
+    private void handleConfirmation(Long chatId, Long telegramId, Integer messageId, UserSession session, String action) {
         if (session.getState() != UserState.WAITING_FOR_REQUEST_CONFIRM || session.getRequestDraft() == null) {
             notificationService.sendText(chatId, "Эта заявка уже подтверждена или отменена. Для новой заявки используйте /new_request.");
             return;
@@ -244,17 +257,42 @@ public class ConversationService {
         if ("SEND".equalsIgnoreCase(action)) {
             User user = userService.getByTelegramId(telegramId);
             Request request = requestService.create(user, session.getRequestDraft());
-            requestService.moveToReview(request);
-            notificationService.sendText(chatId, "Заявка отправлена. ID: " + request.getId());
-            notificationService.notifyManager(buildManagerNotification(user, request), buildManagerKeyboard(request.getId()));
+            requestService.moveToReview(request, user);
+            session.setEmployeeFlowMessageId(messageId);
+            renderEmployeeFlow(chatId, session, requestTextFormatter.buildSubmittedRequestCard(request), null);
+            java.util.List<User> managers = userService.findManagersFor(user.getDepartment(), request.getType());
+            if (managers.isEmpty()) {
+                notificationService.notifyManager(buildManagerNotification(user, request), buildManagerKeyboard(request.getId()));
+            } else {
+                notificationService.notifyChats(
+                        managers.stream().map(User::getChatId).distinct().toList(),
+                        buildManagerNotification(user, request),
+                        buildManagerKeyboard(request.getId())
+                );
+            }
             session.setState(UserState.IDLE);
             sessionStorage.clearRequestDraft(telegramId);
             return;
         }
+        if (CONFIRM_EDIT.equalsIgnoreCase(action)) {
+            session.setState(UserState.WAITING_FOR_REQUEST_DESCRIPTION);
+            session.setEmployeeFlowMessageId(messageId);
+            session.setEditingRequestDescription(true);
+            String currentDescription = session.getRequestDraft().getDescription();
+            renderEmployeeFlow(chatId, session, """
+Измените описание заявки.
+
+Текущее описание:
+%s
+
+Отправьте новый текст описания.
+""".formatted(currentDescription).trim(), null);
+            return;
+        }
         if ("CANCEL".equalsIgnoreCase(action)) {
             session.setState(UserState.IDLE);
+            renderEmployeeFlow(chatId, session, "Создание заявки отменено.", null);
             sessionStorage.clearRequestDraft(telegramId);
-            notificationService.sendText(chatId, "Создание заявки отменено.");
             return;
         }
         notificationService.sendText(chatId, "Неизвестное действие подтверждения.");
@@ -280,6 +318,7 @@ public class ConversationService {
     private InlineKeyboardMarkup buildConfirmKeyboard() {
         return InlineKeyboardMarkup.builder()
                 .keyboardRow(new InlineKeyboardRow(button("Отправить", CONFIRM_PREFIX + "SEND"),
+                        button("Редактировать", CONFIRM_PREFIX + CONFIRM_EDIT),
                         button("Отменить", CONFIRM_PREFIX + "CANCEL")))
                 .build();
     }
@@ -314,6 +353,15 @@ ID заявки: %d
                 request.getId(),
                 requestTextFormatter.formatRequestStatus(request.getStatus())
         ).trim();
+    }
+
+    private void renderEmployeeFlow(Long chatId, UserSession session, String text, InlineKeyboardMarkup keyboardMarkup) {
+        Integer messageId = session.getEmployeeFlowMessageId();
+        if (messageId == null) {
+            session.setEmployeeFlowMessageId(notificationService.sendTextAndReturnMessageId(chatId, text, keyboardMarkup));
+        } else {
+            notificationService.editText(chatId, messageId, text, keyboardMarkup);
+        }
     }
 
     private InlineKeyboardButton button(String text, String callbackData) {

@@ -1,7 +1,11 @@
 package com.example.request_bot.model;
 
+import com.example.request_bot.model.enums.RequestType;
+import com.example.request_bot.model.enums.UserRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -29,6 +33,17 @@ public class User {
 
     @Column(nullable = false)
     private String position;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private UserRole role = UserRole.EMPLOYEE;
+
+    @Column(name = "managed_department")
+    private String managedDepartment;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "managed_request_type")
+    private RequestType managedRequestType;
 
     public Long getId() {
         return id;
@@ -72,5 +87,29 @@ public class User {
 
     public void setPosition(String position) {
         this.position = position;
+    }
+
+    public UserRole getRole() {
+        return role;
+    }
+
+    public void setRole(UserRole role) {
+        this.role = role;
+    }
+
+    public String getManagedDepartment() {
+        return managedDepartment;
+    }
+
+    public void setManagedDepartment(String managedDepartment) {
+        this.managedDepartment = managedDepartment;
+    }
+
+    public RequestType getManagedRequestType() {
+        return managedRequestType;
+    }
+
+    public void setManagedRequestType(RequestType managedRequestType) {
+        this.managedRequestType = managedRequestType;
     }
 }

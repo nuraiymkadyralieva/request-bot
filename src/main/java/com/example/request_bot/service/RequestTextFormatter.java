@@ -37,6 +37,41 @@ public class RequestTextFormatter {
         return builder.toString().trim();
     }
 
+    public String buildSubmittedRequestCard(Request request) {
+        return """
+Ваша заявка #%d отправлена.
+
+Тип: %s
+Описание: %s
+Срочность: %s
+Статус: %s
+""".formatted(
+                request.getId(),
+                formatRequestType(request.getType()),
+                request.getDescription(),
+                formatRequestPriority(request.getPriority()),
+                formatRequestStatus(request.getStatus())
+        ).trim();
+    }
+
+    public String buildDecisionNotification(Request request) {
+        return """
+Ваша заявка #%d %s.
+
+Тип: %s
+Описание: %s
+Срочность: %s
+Статус: %s
+""".formatted(
+                request.getId(),
+                request.getStatus() == RequestStatus.APPROVED ? "одобрена" : "отклонена",
+                formatRequestType(request.getType()),
+                request.getDescription(),
+                formatRequestPriority(request.getPriority()),
+                formatRequestStatus(request.getStatus())
+        ).trim();
+    }
+
     public String formatRequestType(RequestType type) {
         return switch (type) {
             case FINANCE -> "Финансы";

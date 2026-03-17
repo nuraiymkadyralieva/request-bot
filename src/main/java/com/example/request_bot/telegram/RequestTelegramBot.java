@@ -10,6 +10,7 @@ import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.message.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
@@ -58,13 +59,18 @@ public class RequestTelegramBot implements SpringLongPollingBot, LongPollingSing
     }
 
     public void sendText(Long chatId, String text, InlineKeyboardMarkup keyboardMarkup) {
+        sendTextAndReturnMessageId(chatId, text, keyboardMarkup);
+    }
+
+    public Integer sendTextAndReturnMessageId(Long chatId, String text, InlineKeyboardMarkup keyboardMarkup) {
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text(text)
                 .replyMarkup(keyboardMarkup)
                 .build();
         try {
-            telegramClient.execute(message);
+            Message sentMessage = telegramClient.execute(message);
+            return sentMessage.getMessageId();
         } catch (TelegramApiException exception) {
             log.error("Failed to send Telegram message to chat {}", chatId, exception);
             throw new RuntimeException("Failed to send telegram message", exception);

@@ -17,10 +17,18 @@ public class SessionStorage {
     public void clearRequestDraft(Long telegramId) {
         UserSession session = getSession(telegramId);
         session.setRequestDraft(null);
+        session.setEmployeeFlowMessageId(null);
+        session.setEditingRequestDescription(false);
         session.setRequestIdForComment(null);
         session.setManagerViewMessageId(null);
         session.setManagerViewFilter(null);
         session.setManagerViewPending(false);
         session.setManagerViewPage(null);
+        session.setManagerSearchQuery(null);
+        session.setManagerTypeFilter(null);
+        session.setManagerSortMode(com.example.request_bot.service.RequestService.SortMode.CREATED);
+        session.setManagerPriorityFilter(null);
+        session.setManagerReviewedStatus(null);
+        session.setManagerHighOnly(false);
     }
 }

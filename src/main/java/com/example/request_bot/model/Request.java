@@ -50,6 +50,12 @@ public class Request {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @Column(name = "resolved_at")
+    private LocalDateTime resolvedAt;
+
     public Long getId() {
         return id;
     }
@@ -108,5 +114,21 @@ public class Request {
 
     public void setManagerComment(String managerComment) {
         this.managerComment = managerComment;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public LocalDateTime getResolvedAt() {
+        return resolvedAt;
+    }
+
+    public void setResolvedAt(LocalDateTime resolvedAt) {
+        this.resolvedAt = resolvedAt;
     }
 }
