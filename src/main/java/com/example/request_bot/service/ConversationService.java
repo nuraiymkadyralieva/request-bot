@@ -173,7 +173,7 @@ public class ConversationService {
         }
         userService.register(telegramId, chatId, session.getTempName(), session.getTempDepartment(), text);
         session.setState(UserState.IDLE);
-        notificationService.sendText(chatId, "Регистрация завершена. Теперь можно использовать /new_request");
+        notificationService.sendText(chatId, "Вы успешно зарегистрировались. Нажмите /new_request, чтобы оставить заявку руководителю.");
     }
 
     private void handleDescription(Long chatId, UserSession session, String text) {
