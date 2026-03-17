@@ -12,6 +12,7 @@ public class UserSession {
     private Integer managerViewMessageId;
     private String managerViewFilter;
     private boolean managerViewPending;
+    private Integer managerViewPage;
 
     public UserState getState() {
         return state;
@@ -75,5 +76,13 @@ public class UserSession {
 
     public void setManagerViewPending(boolean managerViewPending) {
         this.managerViewPending = managerViewPending;
+    }
+
+    public Integer getManagerViewPage() {
+        return managerViewPage;
+    }
+
+    public void setManagerViewPage(Integer managerViewPage) {
+        this.managerViewPage = managerViewPage;
     }
 }

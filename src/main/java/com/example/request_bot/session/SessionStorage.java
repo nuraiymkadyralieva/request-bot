@@ -21,5 +21,6 @@ public class SessionStorage {
         session.setManagerViewMessageId(null);
         session.setManagerViewFilter(null);
         session.setManagerViewPending(false);
+        session.setManagerViewPage(null);
     }
 }

@@ -19,6 +19,7 @@ import java.util.List;
 @Service
 @Transactional
 public class ManagerPanelService {
+    private static final int PAGE_SIZE = 5;
     public static final String APPROVE_PREFIX = "approve:";
     public static final String REJECT_PREFIX = "reject:";
     public static final String COMMENT_PREFIX = "comment:";
@@ -29,6 +30,7 @@ public class ManagerPanelService {
     public static final String MANAGER_REVIEWED_FILTER = "manager:reviewed:";
     public static final String MANAGER_OPEN_PENDING = "manager:open:pending:";
     public static final String MANAGER_OPEN_REVIEWED = "manager:open:reviewed:";
+    public static final String MANAGER_NOOP = "manager:noop";
 
     private final RequestService requestService;
     private final NotificationService notificationService;
@@ -51,7 +53,8 @@ public class ManagerPanelService {
                 || data.startsWith(MANAGER_PENDING_FILTER)
                 || data.startsWith(MANAGER_REVIEWED_FILTER)
                 || data.startsWith(MANAGER_OPEN_PENDING)
-                || data.startsWith(MANAGER_OPEN_REVIEWED);
+                || data.startsWith(MANAGER_OPEN_REVIEWED)
+                || MANAGER_NOOP.equals(data);
     }
 
     public void showManagerPanel(Long chatId, Long telegramId, Integer messageId) {
@@ -83,6 +86,9 @@ public class ManagerPanelService {
             showManagerPanel(chatId, telegramId, messageId);
             return;
         }
+        if (MANAGER_NOOP.equals(data)) {
+            return;
+        }
         if (MANAGER_PENDING.equals(data)) {
             showPendingMenu(chatId, telegramId, messageId);
             return;
@@ -92,11 +98,11 @@ public class ManagerPanelService {
             return;
         }
         if (data.startsWith(MANAGER_PENDING_FILTER)) {
-            showPendingList(chatId, telegramId, data.substring(MANAGER_PENDING_FILTER.length()), messageId);
+            showPendingList(chatId, telegramId, data.substring(MANAGER_PENDING_FILTER.length()), messageId, session);
             return;
         }
         if (data.startsWith(MANAGER_REVIEWED_FILTER)) {
-            showReviewedList(chatId, telegramId, data.substring(MANAGER_REVIEWED_FILTER.length()), messageId);
+            showReviewedList(chatId, telegramId, data.substring(MANAGER_REVIEWED_FILTER.length()), messageId, session);
             return;
         }
         if (data.startsWith(MANAGER_OPEN_PENDING)) {
@@ -161,12 +167,13 @@ public class ManagerPanelService {
 """.trim(), buildReviewedFilterKeyboard());
     }
 
-    private void showPendingList(Long chatId, Long telegramId, String filter, Integer messageId) {
+    private void showPendingList(Long chatId, Long telegramId, String filterPayload, Integer messageId, UserSession session) {
         if (!isManager(chatId, telegramId)) {
             notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
             return;
         }
-        String filterKey = filter.toUpperCase();
+        PageFilter pageFilter = parsePageFilter(filterPayload);
+        String filterKey = pageFilter.filter().toUpperCase();
         List<Request> requests = "ALL".equals(filterKey)
                 ? requestService.getPendingRequests()
                 : requestService.getPendingRequestsByPriority(parsePriority(filterKey, chatId));
@@ -175,6 +182,9 @@ public class ManagerPanelService {
         }
 
         String label = "ALL".equals(filterKey) ? "Все" : requestTextFormatter.formatRequestPriority(RequestPriority.valueOf(filterKey));
+        session.setManagerViewFilter(filterKey);
+        session.setManagerViewPending(true);
+        session.setManagerViewPage(pageFilter.page());
         if (requests.isEmpty()) {
             renderManagerView(chatId, messageId,
                     "Нерассмотренные заявки: " + label + "\n\nПодходящих заявок пока нет.",
@@ -182,23 +192,29 @@ public class ManagerPanelService {
             return;
         }
 
+        int totalPages = pageCount(requests.size());
+        int page = normalizePage(pageFilter.page(), totalPages);
+        List<Request> pageItems = paginate(requests, page);
         StringBuilder builder = new StringBuilder("Нерассмотренные заявки: ").append(label).append("\n\n");
-        for (Request request : requests) {
+        for (Request request : pageItems) {
             builder.append("#").append(request.getId())
                     .append(" | ").append(requestTextFormatter.formatRequestType(request.getType()))
                     .append(" | ").append(requestTextFormatter.formatRequestPriority(request.getPriority()))
                     .append(" | ").append(request.getUser().getName())
                     .append('\n');
         }
-        renderManagerView(chatId, messageId, builder.toString().trim(), buildPendingRequestsKeyboard(requests, filterKey));
+        builder.append("\nСтраница ").append(page + 1).append(" из ").append(totalPages);
+        session.setManagerViewPage(page);
+        renderManagerView(chatId, messageId, builder.toString().trim(), buildPendingRequestsKeyboard(pageItems, filterKey, page, totalPages));
     }
 
-    private void showReviewedList(Long chatId, Long telegramId, String filter, Integer messageId) {
+    private void showReviewedList(Long chatId, Long telegramId, String filterPayload, Integer messageId, UserSession session) {
         if (!isManager(chatId, telegramId)) {
             notificationService.sendText(chatId, "Эта команда доступна только руководителю.");
             return;
         }
-        String filterKey = filter.toUpperCase();
+        PageFilter pageFilter = parsePageFilter(filterPayload);
+        String filterKey = pageFilter.filter().toUpperCase();
         List<Request> requests = "ALL".equals(filterKey)
                 ? requestService.getReviewedRequests()
                 : requestService.getReviewedRequestsByStatus(parseReviewedStatus(filterKey, chatId));
@@ -207,6 +223,9 @@ public class ManagerPanelService {
         }
 
         String label = formatReviewedFilter(filterKey);
+        session.setManagerViewFilter(filterKey);
+        session.setManagerViewPending(false);
+        session.setManagerViewPage(pageFilter.page());
         if (requests.isEmpty()) {
             renderManagerView(chatId, messageId,
                     "Рассмотренные заявки: " + label + "\n\nПодходящих заявок пока нет.",
@@ -214,15 +233,20 @@ public class ManagerPanelService {
             return;
         }
 
+        int totalPages = pageCount(requests.size());
+        int page = normalizePage(pageFilter.page(), totalPages);
+        List<Request> pageItems = paginate(requests, page);
         StringBuilder builder = new StringBuilder("Рассмотренные заявки: ").append(label).append("\n\n");
-        for (Request request : requests) {
+        for (Request request : pageItems) {
             builder.append("#").append(request.getId())
                     .append(" | ").append(requestTextFormatter.formatRequestType(request.getType()))
                     .append(" | ").append(requestTextFormatter.formatRequestStatus(request.getStatus()))
                     .append(" | ").append(request.getUser().getName())
                     .append('\n');
         }
-        renderManagerView(chatId, messageId, builder.toString().trim(), buildReviewedRequestsKeyboard(requests, filterKey));
+        builder.append("\nСтраница ").append(page + 1).append(" из ").append(totalPages);
+        session.setManagerViewPage(page);
+        renderManagerView(chatId, messageId, builder.toString().trim(), buildReviewedRequestsKeyboard(pageItems, filterKey, page, totalPages));
     }
 
     private void openManagerCard(Long chatId, Long telegramId, String payload, boolean pending, Integer messageId,
@@ -232,19 +256,20 @@ public class ManagerPanelService {
             return;
         }
         String[] parts = payload.split(":");
-        if (parts.length != 2) {
+        if (parts.length != 3) {
             notificationService.sendText(chatId, "Не удалось открыть заявку.");
             return;
         }
-        Request request = getRequest(parts[1], chatId);
+        Request request = getRequest(parts[2], chatId);
         if (request == null) {
             return;
         }
         session.setManagerViewMessageId(messageId);
         session.setManagerViewPending(pending);
         session.setManagerViewFilter(parts[0]);
+        session.setManagerViewPage(parsePage(parts[1]));
         renderManagerView(chatId, messageId, buildManagerNotification(request.getUser(), request),
-                buildManagerRequestCardKeyboard(request, pending, parts[0]));
+                buildManagerRequestCardKeyboard(request, pending, parts[0], parsePage(parts[1])));
     }
 
     private void handleManagerDecision(Long chatId, Long telegramId, String rawRequestId, boolean approved,
@@ -291,6 +316,9 @@ public class ManagerPanelService {
         if (!StringUtils.hasText(session.getManagerViewFilter())) {
             session.setManagerViewFilter(request.getStatus() == RequestStatus.IN_REVIEW ? "ALL" : request.getStatus().name());
         }
+        if (session.getManagerViewPage() == null) {
+            session.setManagerViewPage(0);
+        }
         notificationService.sendText(chatId, "Введите комментарий для заявки #" + request.getId() + ":");
     }
 
@@ -304,15 +332,20 @@ public class ManagerPanelService {
         if (!StringUtils.hasText(filter)) {
             filter = pending ? "ALL" : request.getStatus().name();
         }
+        Integer page = session.getManagerViewPage();
+        if (page == null) {
+            page = 0;
+        }
         pending = request.getStatus() == RequestStatus.IN_REVIEW && pending;
         renderManagerView(chatId, targetMessageId, buildManagerNotification(request.getUser(), request),
-                buildManagerRequestCardKeyboard(request, pending, filter));
+                buildManagerRequestCardKeyboard(request, pending, filter, page));
     }
 
     private void clearManagerView(UserSession session) {
         session.setManagerViewMessageId(null);
         session.setManagerViewFilter(null);
         session.setManagerViewPending(false);
+        session.setManagerViewPage(null);
     }
 
     private boolean isManager(Long chatId, Long telegramId) {
@@ -381,29 +414,35 @@ public class ManagerPanelService {
                 .build();
     }
 
-    private InlineKeyboardMarkup buildPendingRequestsKeyboard(List<Request> requests, String filter) {
+    private InlineKeyboardMarkup buildPendingRequestsKeyboard(List<Request> requests, String filter, int page, int totalPages) {
         List<InlineKeyboardRow> rows = new ArrayList<>();
         for (Request request : requests) {
             rows.add(new InlineKeyboardRow(button("Открыть #" + request.getId(),
-                    MANAGER_OPEN_PENDING + filter + ":" + request.getId())));
+                    MANAGER_OPEN_PENDING + filter + ":" + page + ":" + request.getId())));
+        }
+        if (totalPages > 1) {
+            rows.add(buildPaginationRow(MANAGER_PENDING_FILTER + filter + ":", page, totalPages));
         }
         rows.add(new InlineKeyboardRow(button("К фильтрам", MANAGER_PENDING)));
         rows.add(new InlineKeyboardRow(button("В панель", MANAGER_MENU)));
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
-    private InlineKeyboardMarkup buildReviewedRequestsKeyboard(List<Request> requests, String filter) {
+    private InlineKeyboardMarkup buildReviewedRequestsKeyboard(List<Request> requests, String filter, int page, int totalPages) {
         List<InlineKeyboardRow> rows = new ArrayList<>();
         for (Request request : requests) {
             rows.add(new InlineKeyboardRow(button("Открыть #" + request.getId(),
-                    MANAGER_OPEN_REVIEWED + filter + ":" + request.getId())));
+                    MANAGER_OPEN_REVIEWED + filter + ":" + page + ":" + request.getId())));
+        }
+        if (totalPages > 1) {
+            rows.add(buildPaginationRow(MANAGER_REVIEWED_FILTER + filter + ":", page, totalPages));
         }
         rows.add(new InlineKeyboardRow(button("К фильтрам", MANAGER_REVIEWED)));
         rows.add(new InlineKeyboardRow(button("В панель", MANAGER_MENU)));
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
-    private InlineKeyboardMarkup buildManagerRequestCardKeyboard(Request request, boolean pending, String filter) {
+    private InlineKeyboardMarkup buildManagerRequestCardKeyboard(Request request, boolean pending, String filter, int page) {
         List<InlineKeyboardRow> rows = new ArrayList<>();
         if (pending && request.getStatus() == RequestStatus.IN_REVIEW) {
             rows.add(new InlineKeyboardRow(button("Одобрить", APPROVE_PREFIX + request.getId()),
@@ -411,9 +450,21 @@ public class ManagerPanelService {
                     button("Комментарий", COMMENT_PREFIX + request.getId())));
         }
         rows.add(new InlineKeyboardRow(button("Назад к списку",
-                (pending ? MANAGER_PENDING_FILTER : MANAGER_REVIEWED_FILTER) + filter)));
+                (pending ? MANAGER_PENDING_FILTER : MANAGER_REVIEWED_FILTER) + filter + ":" + page)));
         rows.add(new InlineKeyboardRow(button("В панель", MANAGER_MENU)));
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private InlineKeyboardRow buildPaginationRow(String prefix, int page, int totalPages) {
+        List<InlineKeyboardButton> buttons = new ArrayList<>();
+        if (page > 0) {
+            buttons.add(button("← Назад", prefix + (page - 1)));
+        }
+        buttons.add(button((page + 1) + "/" + totalPages, MANAGER_NOOP));
+        if (page + 1 < totalPages) {
+            buttons.add(button("Дальше →", prefix + (page + 1)));
+        }
+        return new InlineKeyboardRow(buttons);
     }
 
     private InlineKeyboardButton button(String text, String callbackData) {
@@ -450,5 +501,37 @@ ID заявки: %d
             case "REJECTED" -> "Отклоненные";
             default -> "Все";
         };
+    }
+
+    private PageFilter parsePageFilter(String payload) {
+        String[] parts = payload.split(":");
+        String filter = parts.length > 0 && StringUtils.hasText(parts[0]) ? parts[0] : "ALL";
+        int page = parts.length > 1 ? parsePage(parts[1]) : 0;
+        return new PageFilter(filter, page);
+    }
+
+    private int parsePage(String rawPage) {
+        try {
+            return Math.max(Integer.parseInt(rawPage), 0);
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
+    }
+
+    private int pageCount(int totalItems) {
+        return Math.max(1, (int) Math.ceil((double) totalItems / PAGE_SIZE));
+    }
+
+    private int normalizePage(int page, int totalPages) {
+        return Math.max(0, Math.min(page, totalPages - 1));
+    }
+
+    private List<Request> paginate(List<Request> requests, int page) {
+        int fromIndex = page * PAGE_SIZE;
+        int toIndex = Math.min(fromIndex + PAGE_SIZE, requests.size());
+        return requests.subList(fromIndex, toIndex);
+    }
+
+    private record PageFilter(String filter, int page) {
     }
 }
