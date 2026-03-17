@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
@@ -48,7 +48,7 @@ public class RequestTelegramBot implements SpringLongPollingBot, LongPollingSing
             log.error("Failed to handle Telegram update", exception);
             Long chatId = extractChatId(update);
             if (chatId != null) {
-                safeSendText(chatId, "Произошла ошибка при обработке запроса. Попробуйте ещё раз.");
+                safeSendText(chatId, "Произошла ошибка при обработке запроса. Попробуйте еще раз.");
             }
         }
     }
@@ -81,9 +81,35 @@ public class RequestTelegramBot implements SpringLongPollingBot, LongPollingSing
         try {
             telegramClient.execute(message);
         } catch (TelegramApiException exception) {
+            if (isMessageNotModified(exception)) {
+                log.debug("Skipped editing Telegram message {} in chat {} because content was unchanged", messageId, chatId);
+                return;
+            }
+            if (isEditFallbackAllowed(exception)) {
+                log.warn("Could not edit Telegram message {} in chat {}, sending a new message instead", messageId, chatId, exception);
+                sendText(chatId, text, keyboardMarkup);
+                return;
+            }
             log.error("Failed to edit Telegram message {} in chat {}", messageId, chatId, exception);
             throw new RuntimeException("Failed to edit telegram message", exception);
         }
+    }
+
+    private boolean isMessageNotModified(TelegramApiException exception) {
+        String message = extractExceptionMessage(exception);
+        return message.contains("message is not modified");
+    }
+
+    private boolean isEditFallbackAllowed(TelegramApiException exception) {
+        String message = extractExceptionMessage(exception);
+        return message.contains("message to edit not found")
+                || message.contains("message can't be edited")
+                || message.contains("message can't be edited, not enough rights")
+                || message.contains("there is no text in the message to edit");
+    }
+
+    private String extractExceptionMessage(TelegramApiException exception) {
+        return exception.getMessage() == null ? "" : exception.getMessage().toLowerCase();
     }
 
     private void safeSendText(Long chatId, String text) {
