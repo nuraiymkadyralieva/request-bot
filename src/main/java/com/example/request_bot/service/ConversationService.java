@@ -87,7 +87,7 @@ public class ConversationService {
             handleMyRequests(chatId, telegramId);
             return;
         }
-        if ("/manager_panel".equals(text) || "/manager_requests".equals(text)) {
+        if ("/manager_panel".equals(text)) {
             showManagerPanel(chatId, telegramId, null);
             return;
         }
@@ -133,15 +133,15 @@ public class ConversationService {
             return;
         }
         if (data.startsWith(APPROVE_PREFIX)) {
-            handleManagerDecision(chatId, telegramId, data.substring(APPROVE_PREFIX.length()), true);
+            handleManagerDecision(chatId, telegramId, data.substring(APPROVE_PREFIX.length()), true, messageId);
             return;
         }
         if (data.startsWith(REJECT_PREFIX)) {
-            handleManagerDecision(chatId, telegramId, data.substring(REJECT_PREFIX.length()), false);
+            handleManagerDecision(chatId, telegramId, data.substring(REJECT_PREFIX.length()), false, messageId);
             return;
         }
         if (data.startsWith(COMMENT_PREFIX)) {
-            handleManagerCommentStart(chatId, telegramId, session, data.substring(COMMENT_PREFIX.length()));
+            handleManagerCommentStart(chatId, telegramId, session, data.substring(COMMENT_PREFIX.length()), messageId);
             return;
         }
         if (MANAGER_MENU.equals(data)) {
@@ -374,6 +374,10 @@ public class ConversationService {
         if (request == null) {
             return;
         }
+        UserSession session = sessionStorage.getSession(telegramId);
+        session.setManagerViewMessageId(messageId);
+        session.setManagerViewPending(pending);
+        session.setManagerViewFilter(parts[0]);
         renderManagerView(chatId, messageId,
                 buildManagerNotification(request.getUser(), request),
                 buildManagerRequestCardKeyboard(request, pending, parts[0]));
@@ -431,7 +435,7 @@ public class ConversationService {
         notificationService.sendText(chatId, "Неизвестное действие подтверждения.");
     }
 
-    private void handleManagerDecision(Long chatId, Long telegramId, String rawRequestId, boolean approved) {
+    private void handleManagerDecision(Long chatId, Long telegramId, String rawRequestId, boolean approved, Integer messageId) {
         if (!isManager(chatId, telegramId)) {
             notificationService.sendText(chatId, "Только руководитель может использовать эти действия.");
             return;
@@ -442,6 +446,7 @@ public class ConversationService {
         }
         if (request.getStatus() == RequestStatus.APPROVED || request.getStatus() == RequestStatus.REJECTED) {
             notificationService.sendText(chatId, "Эта заявка уже обработана.");
+            refreshManagerCard(chatId, telegramId, request, messageId);
             return;
         }
         if (approved) {
@@ -453,9 +458,10 @@ public class ConversationService {
             notificationService.sendText(chatId, "Заявка #" + request.getId() + " отклонена.");
             notificationService.sendText(request.getUser().getChatId(), "Ваша заявка #" + request.getId() + " отклонена.");
         }
+        refreshManagerCard(chatId, telegramId, request, messageId);
     }
 
-    private void handleManagerCommentStart(Long chatId, Long telegramId, UserSession session, String rawRequestId) {
+    private void handleManagerCommentStart(Long chatId, Long telegramId, UserSession session, String rawRequestId, Integer messageId) {
         if (!isManager(chatId, telegramId)) {
             notificationService.sendText(chatId, "Только руководитель может использовать эти действия.");
             return;
@@ -466,6 +472,11 @@ public class ConversationService {
         }
         session.setRequestIdForComment(request.getId());
         session.setState(UserState.WAITING_FOR_MANAGER_COMMENT);
+        session.setManagerViewMessageId(messageId);
+        session.setManagerViewPending(request.getStatus() == RequestStatus.IN_REVIEW);
+        if (!StringUtils.hasText(session.getManagerViewFilter())) {
+            session.setManagerViewFilter(request.getStatus() == RequestStatus.IN_REVIEW ? "ALL" : request.getStatus().name());
+        }
         notificationService.sendText(chatId, "Введите комментарий для заявки #" + request.getId() + ":");
     }
 
@@ -496,6 +507,10 @@ public class ConversationService {
 
 %s
 """.formatted(request.getId(), comment).trim());
+        refreshManagerCard(chatId, telegramId, request, session.getManagerViewMessageId());
+        session.setManagerViewMessageId(null);
+        session.setManagerViewFilter(null);
+        session.setManagerViewPending(false);
     }
 
     private Request getRequest(String rawRequestId, Long chatId) {
@@ -536,6 +551,28 @@ public class ConversationService {
         } else {
             notificationService.editText(chatId, messageId, text, keyboard);
         }
+    }
+
+    private void refreshManagerCard(Long chatId, Long telegramId, Request request, Integer messageId) {
+        UserSession session = sessionStorage.getSession(telegramId);
+        Integer targetMessageId = messageId != null ? messageId : session.getManagerViewMessageId();
+        if (targetMessageId == null) {
+            return;
+        }
+
+        String filter = session.getManagerViewFilter();
+        boolean pending = session.isManagerViewPending();
+        if (!StringUtils.hasText(filter)) {
+            filter = pending ? "ALL" : request.getStatus().name();
+        }
+        pending = request.getStatus() == RequestStatus.IN_REVIEW && pending;
+
+        renderManagerView(
+                chatId,
+                targetMessageId,
+                buildManagerNotification(request.getUser(), request),
+                buildManagerRequestCardKeyboard(request, pending, filter)
+        );
     }
 
     private String buildDraftSummary(RequestDraft draft) {

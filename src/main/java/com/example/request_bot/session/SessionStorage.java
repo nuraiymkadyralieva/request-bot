@@ -18,5 +18,8 @@ public class SessionStorage {
         UserSession session = getSession(telegramId);
         session.setRequestDraft(null);
         session.setRequestIdForComment(null);
+        session.setManagerViewMessageId(null);
+        session.setManagerViewFilter(null);
+        session.setManagerViewPending(false);
     }
 }

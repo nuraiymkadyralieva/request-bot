@@ -9,6 +9,9 @@ public class UserSession {
     private String tempDepartment;
     private RequestDraft requestDraft;
     private Long requestIdForComment;
+    private Integer managerViewMessageId;
+    private String managerViewFilter;
+    private boolean managerViewPending;
 
     public UserState getState() {
         return state;
@@ -48,5 +51,29 @@ public class UserSession {
 
     public void setRequestIdForComment(Long requestIdForComment) {
         this.requestIdForComment = requestIdForComment;
+    }
+
+    public Integer getManagerViewMessageId() {
+        return managerViewMessageId;
+    }
+
+    public void setManagerViewMessageId(Integer managerViewMessageId) {
+        this.managerViewMessageId = managerViewMessageId;
+    }
+
+    public String getManagerViewFilter() {
+        return managerViewFilter;
+    }
+
+    public void setManagerViewFilter(String managerViewFilter) {
+        this.managerViewFilter = managerViewFilter;
+    }
+
+    public boolean isManagerViewPending() {
+        return managerViewPending;
+    }
+
+    public void setManagerViewPending(boolean managerViewPending) {
+        this.managerViewPending = managerViewPending;
     }
 }
